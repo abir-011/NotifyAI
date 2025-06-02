@@ -6,9 +6,9 @@ services:
     buildCommand: |
       pip install --upgrade pip
       pip install -r requirements.txt
-    startCommand: gunicorn notifyai_project.wsgi:application
+    startCommand: gunicorn notifyai_project.notifyai_project.wsgi:application
     envVars:
       - key: DJANGO_SETTINGS_MODULE
-        value: notifyai_project.settings
+        value: notifyai_project.notifyai_project.settings
       - key: PYTHON_VERSION
         value: 3.11
