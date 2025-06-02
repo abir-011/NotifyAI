@@ -3,10 +3,12 @@ services:
   - type: web
     name: notifyai-web
     runtime: python
-    buildCommand: pip install -r requirements.txt
+    buildCommand: |
+      pip install --upgrade pip
+      pip install -r requirements.txt
     startCommand: gunicorn notifyai_project.wsgi:application
     envVars:
       - key: DJANGO_SETTINGS_MODULE
         value: notifyai_project.settings
       - key: PYTHON_VERSION
-        value: 3.10.13
+        value: 3.11
