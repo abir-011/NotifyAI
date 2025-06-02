@@ -51,18 +51,21 @@ def google_login(request):
 #Google sends user back here with code
 def auth_callback(request):
     state = request.session.get('state', None)
+    client_secrets_file = os.getenv("GOOGLE_CLIENT_SECRET_FILE")
+    redirect_uri = os.getenv("GOOGLE_REDIRECT_URI")
+
     flow = Flow.from_client_secrets_file(
-        settings.GOOGLE_OAUTH2_CLIENT_SECRET_FILE,
-        scopes=SCOPES,
+        client_secrets_file,
+        scopes=settings.GOOGLE_OAUTH2_SCOPES,
         state=state,
-        redirect_uri=settings.GOOGLE_REDIRECT_URI
+        redirect_uri=redirect_uri
     )
+
     authorization_response = request.build_absolute_uri()
     flow.fetch_token(authorization_response=authorization_response)
 
     credentials = flow.credentials
 
-    # Save credentials in session or DB as you like
     request.session['credentials'] = {
         'token': credentials.token,
         'refresh_token': credentials.refresh_token,
@@ -72,7 +75,7 @@ def auth_callback(request):
         'scopes': credentials.scopes
     }
 
-    return redirect('dashboard') 
+    return redirect('dashboard')
 
 def dashboard(request):
     if 'credentials' not in request.session:

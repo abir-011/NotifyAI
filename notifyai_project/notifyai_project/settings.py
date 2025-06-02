@@ -131,7 +131,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 CORS_ALLOW_ALL_ORIGINS = True  #Allow all for now (we'll restrict later)
 
 GOOGLE_OAUTH2_CLIENT_SECRET_FILE = os.getenv("GOOGLE_CLIENT_SECRET_FILE")
-GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI")
+#GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI")
 
 GOOGLE_OAUTH2_SCOPES = [
     'https://www.googleapis.com/auth/userinfo.email',
@@ -147,7 +147,6 @@ CSRF_COOKIE_SECURE = False
 
 load_dotenv()
 
-GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI")
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
