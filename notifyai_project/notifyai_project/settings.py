@@ -130,15 +130,16 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 CORS_ALLOW_ALL_ORIGINS = True  #Allow all for now (we'll restrict later)
 
+GOOGLE_OAUTH2_CLIENT_SECRET_FILE = os.getenv("GOOGLE_CLIENT_SECRET_FILE")
+GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI")
 
-
-GOOGLE_OAUTH2_CLIENT_SECRET_FILE="C:/Code folder/NotifyAI/notifyai_project/client_secret_537242935432-7rft5ghlbif4602tg2o1mjft6jkqtqpi.apps.googleusercontent.com.json"
 GOOGLE_OAUTH2_SCOPES = [
     'https://www.googleapis.com/auth/userinfo.email',
     'https://www.googleapis.com/auth/userinfo.profile',
     'openid',
     'https://www.googleapis.com/auth/calendar',
     'https://www.googleapis.com/auth/tasks',
+    'https://www.googleapis.com/auth/calendar.events'
 ]
 
 SESSION_COOKIE_SECURE = False

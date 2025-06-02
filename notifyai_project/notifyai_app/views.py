@@ -21,13 +21,7 @@ load_dotenv()
 def home(request):
     return render(request, 'home.html')
 
-SCOPES = [
-    "openid",
-    "https://www.googleapis.com/auth/userinfo.email",
-    "https://www.googleapis.com/auth/userinfo.profile",
-    "https://www.googleapis.com/auth/tasks",
-    "https://www.googleapis.com/auth/calendar"
-]
+SCOPES = settings.GOOGLE_OAUTH2_SCOPES
 
 def home(request):
     return render(request, 'home.html', {
@@ -36,12 +30,11 @@ def home(request):
 
 #Redirect user to Google OAuth
 def google_login(request):
-    CLIENT_SECRETS_FILE = os.getenv("GOOGLE_CLIENT_SECRET_FILE")
     
     flow = Flow.from_client_secrets_file(
-        CLIENT_SECRETS_FILE,
+        settings.GOOGLE_OAUTH2_CLIENT_SECRET_FILE,
         scopes=SCOPES,
-        redirect_uri=os.getenv("GOOGLE_REDIRECT_URI")
+        redirect_uri=settings.GOOGLE_REDIRECT_URI
     )
     authorization_url, state = flow.authorization_url(
         access_type='offline',
@@ -53,28 +46,29 @@ def google_login(request):
 
 #Google sends user back here with code
 def auth_callback(request):
-    code = request.GET.get('code')
-    if not code:
-        return redirect('login')  # Or any other error page
-
-    # Create flow object
-    CLIENT_SECRETS_FILE = settings.GOOGLE_OAUTH2_CLIENT_SECRET_FILE
-
+    state = request.session.get('state', None)
     flow = Flow.from_client_secrets_file(
-    settings.GOOGLE_OAUTH2_CLIENT_SECRET_FILE,
-    scopes=settings.GOOGLE_OAUTH2_SCOPES,
-    redirect_uri=settings.GOOGLE_REDIRECT_URI
+        settings.GOOGLE_OAUTH2_CLIENT_SECRET_FILE,
+        scopes=SCOPES,
+        state=state,
+        redirect_uri=settings.GOOGLE_REDIRECT_URI
     )
-
-    # Now fetch the token using the code
-    flow.fetch_token(code=code)
+    authorization_response = request.build_absolute_uri()
+    flow.fetch_token(authorization_response=authorization_response)
 
     credentials = flow.credentials
 
-    # Save credentials in session
-    request.session['credentials'] = credentials_to_dict(credentials)
+    # Save credentials in session or DB as you like
+    request.session['credentials'] = {
+        'token': credentials.token,
+        'refresh_token': credentials.refresh_token,
+        'token_uri': credentials.token_uri,
+        'client_id': credentials.client_id,
+        'client_secret': credentials.client_secret,
+        'scopes': credentials.scopes
+    }
 
-    return redirect('dashboard')
+    return redirect('dashboard') 
 
 def dashboard(request):
     if 'credentials' not in request.session:
