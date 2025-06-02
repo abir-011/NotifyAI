@@ -30,12 +30,16 @@ def home(request):
 
 #Redirect user to Google OAuth
 def google_login(request):
-    
+    # Use production URI if available, else fallback to localhost
+    redirect_uri = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/auth/callback/")
+    client_secrets_file = os.getenv("GOOGLE_CLIENT_SECRET_FILE")
+
     flow = Flow.from_client_secrets_file(
-        settings.GOOGLE_OAUTH2_CLIENT_SECRET_FILE,
-        scopes=SCOPES,
-        redirect_uri=settings.GOOGLE_REDIRECT_URI
+        client_secrets_file,
+        scopes=settings.GOOGLE_OAUTH2_SCOPES,
+        redirect_uri=redirect_uri
     )
+
     authorization_url, state = flow.authorization_url(
         access_type='offline',
         include_granted_scopes='true',
