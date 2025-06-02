@@ -42,7 +42,6 @@ INSTALLED_APPS = [
     'notifyai_app',
     'rest_framework',
     'corsheaders',
-    'sslserver',
 ]
 
 MIDDLEWARE = [
