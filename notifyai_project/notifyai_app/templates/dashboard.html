@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Dashboard</title>
+</head>
+<body>
+    <h2>Welcome, {{ user_info.name }}!</h2>
+    <p>Email: {{ user_info.email }}</p>
+    <img src="{{ user_info.picture }}" alt="Profile Picture" />
+
+    <form method="POST" action="{% url 'process_prompt' %}">
+        {% csrf_token %}
+        <input type="text" name="prompt" placeholder="e.g. Remind me to call John tomorrow at 5pm">
+        <button type="submit">Submit</button>
+    </form>
+</body>
+</html>
