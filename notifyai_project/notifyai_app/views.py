@@ -49,6 +49,7 @@ def google_login(request):
     )
     # Save state in session BEFORE redirect
     request.session['state'] = state
+    request.session.save()
     request.session.modified = True  # ensure session is saved immediately
     return redirect(authorization_url)
 
@@ -347,7 +348,7 @@ def logout_view(request):
     # Clear session data
     django_logout(request)  # clears auth
     request.session.flush()  # clears all session data
-    return redirect('google_login')
+    return redirect('home')
 
 
 
