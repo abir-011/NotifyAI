@@ -133,6 +133,8 @@ CORS_ALLOW_ALL_ORIGINS = True  #Allow all for now (we'll restrict later)
 GOOGLE_OAUTH2_CLIENT_SECRET_FILE = os.getenv("GOOGLE_CLIENT_SECRET_FILE")
 #GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI")
 
+GOOGLE_OAUTH2_CLIENT_SECRETS_JSON = os.path.join(BASE_DIR, "client_secret.json")
+
 GOOGLE_OAUTH2_SCOPES = [
     'https://www.googleapis.com/auth/userinfo.email',
     'https://www.googleapis.com/auth/userinfo.profile',
@@ -142,11 +144,36 @@ GOOGLE_OAUTH2_SCOPES = [
     'https://www.googleapis.com/auth/calendar.events'
 ]
 
-SESSION_COOKIE_SECURE = False
-CSRF_COOKIE_SECURE = False
+#SESSION_COOKIE_SECURE = False
+#CSRF_COOKIE_SECURE = False
+
+
 
 load_dotenv()
 
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
+IS_PRODUCTION = os.getenv("RENDER", False)
+
+# Dynamically choose base URL
+if DEBUG:
+    os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
+    BASE_URL = "http://localhost:8000"
+    
+    SESSION_COOKIE_SECURE = False
+    CSRF_COOKIE_SECURE = False
+    
+    SESSION_COOKIE_SAMESITE = 'Lax'
+    CSRF_COOKIE_SAMESITE = 'Lax'
+    
+    SESSION_EXPIRE_AT_BROWSER_CLOSE = True
+else:
+    BASE_URL = "https://notifyai-n9dx.onrender.com"
+    
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    
+    SESSION_COOKIE_SAMESITE = 'Lax'
+    CSRF_COOKIE_SAMESITE = 'Lax'

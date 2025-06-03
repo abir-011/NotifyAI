@@ -16,6 +16,9 @@ import google.generativeai as genai
 from django.conf import settings
 from .gemini import get_gemini_response
 from dotenv import load_dotenv
+from django.views.decorators.csrf import csrf_exempt
+from django.contrib.auth import logout as django_logout
+from django.shortcuts import redirect
 load_dotenv()
 
 def home(request):
@@ -30,9 +33,8 @@ def home(request):
 
 #Redirect user to Google OAuth
 def google_login(request):
-    # Use production URI if available, else fallback to localhost
-    redirect_uri = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/auth/callback/")
-    client_secrets_file = os.getenv("GOOGLE_CLIENT_SECRET_FILE")
+    client_secrets_file = settings.GOOGLE_OAUTH2_CLIENT_SECRETS_JSON
+    redirect_uri = settings.BASE_URL + "/auth/callback/"
 
     flow = Flow.from_client_secrets_file(
         client_secrets_file,
@@ -45,14 +47,22 @@ def google_login(request):
         include_granted_scopes='true',
         prompt='consent'
     )
+    # Save state in session BEFORE redirect
     request.session['state'] = state
+    request.session.modified = True  # ensure session is saved immediately
     return redirect(authorization_url)
 
-#Google sends user back here with code
+
+#@csrf_exempt 
 def auth_callback(request):
-    state = request.session.get('state', None)
-    client_secrets_file = os.getenv("GOOGLE_CLIENT_SECRET_FILE")
-    redirect_uri = os.getenv("GOOGLE_REDIRECT_URI")
+    # Get the state from session (must exist)
+    state = request.session.get("state")
+    if not state:
+        print("⚠️ No state in session!")
+        return redirect('google_login')  # or your login URL name
+
+    client_secrets_file = settings.GOOGLE_OAUTH2_CLIENT_SECRETS_JSON
+    redirect_uri = settings.BASE_URL + "/auth/callback/"
 
     flow = Flow.from_client_secrets_file(
         client_secrets_file,
@@ -62,6 +72,14 @@ def auth_callback(request):
     )
 
     authorization_response = request.build_absolute_uri()
+
+    # 🔍 Add debug output here
+    print("📥 OAuth callback received:")
+    print("🔒 Expected state from session:", state)
+    print("🔐 Saving state in session:", state)
+    print("🌐 Full callback URL:", authorization_response)
+
+    # Fetch token
     flow.fetch_token(authorization_response=authorization_response)
 
     credentials = flow.credentials
@@ -75,19 +93,22 @@ def auth_callback(request):
         'scopes': credentials.scopes
     }
 
+    # Optional: clear state from session after success
+    try:
+        del request.session['state']
+    except KeyError:
+        pass
+
     return redirect('dashboard')
 
 def dashboard(request):
-    if 'credentials' not in request.session:
-        return redirect('home')  # or login
+    credentials = request.session.get('credentials')
+    if not credentials:
+        return redirect('google_login')
 
-    creds_data = request.session['credentials']
-    credentials = Credentials(**creds_data)
-
-    user_service = build('oauth2', 'v2', credentials=credentials)
-    user_info = user_service.userinfo().get().execute()
-
-    return render(request, 'dashboard.html', {'user_info': user_info})
+    return render(request, 'dashboard.html', {
+        'user': request.session.get('user_info', {})  # optionally pass user data
+    })
 
 def credentials_to_dict(credentials):
     """Converts credentials to a dictionary for storage"""
@@ -315,9 +336,20 @@ def process_prompt(request):
         print("Datetime (raw):", datetime_str)
         print("Datetime (parsed):", event_dt)
         print("Title:", title)
+        response_data = {
+            'response': f"✅ {action_type.capitalize()} '{title}' created successfully!",
+            'prompt': prompt
+        }
 
-        return redirect(request.META.get('HTTP_REFERER', 'dashboard'))
+        return render(request, 'dashboard.html', response_data)
     
+def logout_view(request):
+    logout(request)
+    # Clear session data
+    django_logout(request)  # clears auth
+    request.session.flush()  # clears all session data
+    return redirect('google_login')
+
 
 
 genai.configure(api_key=settings.GEMINI_API_KEY)
