@@ -344,7 +344,6 @@ def process_prompt(request):
         return render(request, 'dashboard.html', response_data)
     
 def logout_view(request):
-    logout(request)
     # Clear session data
     django_logout(request)  # clears auth
     request.session.flush()  # clears all session data
