@@ -25,7 +25,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = 'django-insecure-y0_co+u-f_gbj&g%slo*j52z0&m9i(7ut41v#rcjj9f#_c5po1'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv("DEBUG", "True").lower() in ("true", "1", "yes")
 
 ALLOWED_HOSTS = ['notifyai-n9dx.onrender.com', 'localhost', '127.0.0.1']
 
