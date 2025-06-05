@@ -45,7 +45,7 @@ def google_login(request):
     authorization_url, state = flow.authorization_url(
         access_type='offline',
         include_granted_scopes='true',
-        prompt='consent'
+        prompt='select_account'
     )
     # Save state in session BEFORE redirect
     request.session['state'] = state
@@ -84,6 +84,15 @@ def auth_callback(request):
     flow.fetch_token(authorization_response=authorization_response)
 
     credentials = flow.credentials
+
+    user_info = requests.get(
+        'https://www.googleapis.com/oauth2/v1/userinfo',
+        params={'alt': 'json'},
+        headers={'Authorization': f'Bearer {credentials.token}'}
+    ).json()
+
+    # Save user info in session
+    request.session['user_info'] = user_info
 
     request.session['credentials'] = {
         'token': credentials.token,

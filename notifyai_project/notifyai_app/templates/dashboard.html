@@ -56,6 +56,15 @@
     <h1 class="text-4xl font-extrabold text-purple-600">NotifyAI</h1>
     <p class="text-gray-500 text-sm">You’re successfully logged in with Google!</p>
 
+    <!-- User Info Section -->
+    <div class="mt-6 flex flex-col items-center space-y-2">
+      {% if user.picture %}
+        <img src="{{ user.picture }}" alt="Profile picture" class="w-20 h-20 rounded-full shadow-md border-2 border-purple-400">
+      {% endif %}
+      <p class="text-sm text-gray-600 dark:text-gray-300"><strong>{{ user.name }}</strong></p>
+      <p class="text-xs text-gray-500 dark:text-gray-400">{{ user.email }}</p>
+    </div>
+
     <form method="POST" action="{% url 'process_prompt' %}" class="space-y-4">
       {% csrf_token %}
       <input
