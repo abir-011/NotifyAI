@@ -9,12 +9,12 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 import googleapiclient.discovery
 from googleapiclient.discovery import build
-from datetime import datetime,timedelta,timezone
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 import pytz
 from google_auth_oauthlib.flow import Flow
-import google.generativeai as genai
+from google import genai
 from django.conf import settings
-from .gemini import get_gemini_response
 from dotenv import load_dotenv
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth import logout as django_logout
@@ -78,7 +78,6 @@ def auth_callback(request):
     print("📥 OAuth callback received:")
     print("🔒 Expected state from session:", state)
     print("🔐 Saving state in session:", state)
-    print("🌐 Full callback URL:", authorization_response)
 
     # Fetch token
     flow.fetch_token(authorization_response=authorization_response)
@@ -100,7 +99,8 @@ def auth_callback(request):
         'token_uri': credentials.token_uri,
         'client_id': credentials.client_id,
         'client_secret': credentials.client_secret,
-        'scopes': credentials.scopes
+        'scopes': credentials.scopes,
+        'expiry': credentials.expiry.isoformat() if credentials.expiry else None
     }
 
     # Optional: clear state from session after success
@@ -120,16 +120,18 @@ def dashboard(request):
         'user': request.session.get('user_info', {})  # optionally pass user data
     })
 
+
 def credentials_to_dict(credentials):
-    """Converts credentials to a dictionary for storage"""
     return {
         'token': credentials.token,
         'refresh_token': credentials.refresh_token,
         'token_uri': credentials.token_uri,
         'client_id': credentials.client_id,
         'client_secret': credentials.client_secret,
-        'scopes': credentials.scopes
+        'scopes': credentials.scopes,
+        'expiry': credentials.expiry.isoformat() if credentials.expiry else None
     }
+
 
 
 def create_google_calendar_event(access_token, event_details):
@@ -203,155 +205,233 @@ def parse_prompt(prompt):
         "due_time": "2025-04-26T12:00:00Z"  # Example due date
     }
 
+
+
 def get_gemini_response(prompt):
-    model = genai.GenerativeModel("gemini-2.0-flash")
+    client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
-    system_prompt = """
-You are an assistant that helps convert natural language into structured data. For every input, extract:
-- action_type: either "event" or "task"
-- title: short title of the event/task
-- datetime: in ISO format (e.g. 2025-06-01T17:00:00)
+    now = datetime.now(ZoneInfo("Asia/Kolkata"))
 
-Respond only in valid JSON like:
-{
-  "action_type": "event",
-  "title": "Call John",
-  "datetime": "2025-06-01T17:00:00"
-}
-"""
+    system_prompt = f"""
+    You are NotifyAI, an intelligent assistant that converts
+    natural language into structured tasks and calendar events.
 
-    response = model.generate_content([system_prompt, prompt])
+    CURRENT DATE AND TIME:
+    {now.isoformat()}
+
+    TIMEZONE: Asia/Kolkata
+
+    IMPORTANT RULES:
+
+    1. Always calculate relative dates using the CURRENT DATE above.
+    2. Never use dates from old examples or training data.
+    3. "Tomorrow" means exactly one day after the current date.
+    4. "Today" means the current date.
+    5. If the user says "remind me", "meeting",
+       "appointment", or "schedule", classify it as "event".
+    6. If the user gives a simple to-do or task,
+       classify it as "task".
+    7. If no date or time is specified, use null.
+    8. Return datetime in ISO 8601 format with timezone offset.
+    9. Do not invent dates or times.
+
+    Return ONLY valid JSON in this format:
+
+    {{
+        "action_type": "event",
+        "title": "Submit assignment",
+        "datetime": "2026-11-11T18:00:00+05:30"
+    }}
+    """
+
+    response = client.models.generate_content(
+        model="gemini-3.5-flash-lite",
+        contents=[system_prompt, prompt],
+        config={
+            "response_mime_type": "application/json"
+        }
+    )
+
     raw_text = response.text.strip()
     print("Raw Gemini response:", repr(raw_text))
 
-    # Strip markdown code blocks ```json ... ```
-    cleaned_text = re.sub(r"^```json\s*|\s*```$", "", raw_text, flags=re.DOTALL).strip()
-
     try:
-        data = json.loads(cleaned_text)
-        return data
+        return json.loads(raw_text)
     except Exception as e:
         print("Gemini parsing error:", e)
         return {}
+
+
     
 
 def is_only_time(s):
     return bool(re.fullmatch(r"\d{2}:\d{2}(:\d{2})?", s))
 
+
 def process_prompt(request):
-    if request.method == 'POST':
-        prompt = request.POST.get('prompt')
-        if not prompt:
-            messages.error(request, "Prompt cannot be empty.")
-            return redirect('home')
+    if request.method != 'POST':
+        return redirect('dashboard')
 
-        creds_dict = request.session.get('credentials')
-        if not creds_dict:
-            return redirect('login')
+    prompt = request.POST.get('prompt', '').strip()
 
-        credentials = google.oauth2.credentials.Credentials(**creds_dict)
+    if not prompt:
+        messages.error(request, "Prompt cannot be empty.")
+        return redirect('dashboard')
+
+    creds_dict = request.session.get('credentials')
+
+    if not creds_dict:
+        return redirect('google_login')
+
+    try:
+        credentials = Credentials.from_authorized_user_info(
+            info=creds_dict,
+            scopes=settings.GOOGLE_OAUTH2_SCOPES
+        )
+
+        # Refresh expired access token
+        if credentials.expired:
+            if not credentials.refresh_token:
+                messages.error(request, "Google session expired. Please sign in again.")
+                return redirect('google_login')
+
+            credentials.refresh(
+                google.auth.transport.requests.Request()
+            )
+
+        # Save refreshed credentials immediately
+        request.session['credentials'] = credentials_to_dict(credentials)
+        request.session.modified = True
 
         result = get_gemini_response(prompt)
+
         action_type = result.get("action_type")
         title = result.get("title")
-        datetime_str = result.get("datetime")  # Can be full datetime, time only, or None
+        datetime_str = result.get("datetime")
 
-        if not action_type or not title:
+        if action_type not in ("event", "task") or not title:
             messages.error(request, "Could not understand your input.")
-            return redirect('home')
+            return redirect('dashboard')
 
-        now_utc = datetime.now(timezone.utc)
         event_dt = None
 
         if datetime_str:
-            try:
-                gemini_dt = datetime.fromisoformat(datetime_str)
+            gemini_dt = datetime.fromisoformat(datetime_str)
 
-                now = datetime.now(timezone.utc)
+            if gemini_dt.tzinfo is None:
+                gemini_dt = gemini_dt.replace(
+                    tzinfo=ZoneInfo("Asia/Kolkata")
+                )
 
-                # Sanitize unreasonable years (before now or way into the future)
-                if gemini_dt.year < now.year or gemini_dt.year > now.year + 1:
-                    # Just use today's date + Gemini's time
-                    event_dt = now.replace(
-                        hour=gemini_dt.hour,
-                        minute=gemini_dt.minute,
-                        second=gemini_dt.second if gemini_dt.second else 0,
-                        microsecond=0
-                    )
+            event_dt = gemini_dt.astimezone(timezone.utc)
 
-                    # If that time already passed today, schedule for tomorrow
-                    if event_dt < now:
-                        event_dt += timedelta(days=1)
-                else:
-                    # Use Gemini's datetime directly
-                    event_dt = gemini_dt.astimezone(timezone.utc)
-
-            except Exception as e:
-                messages.error(request, f"Invalid date format: {e}")
-                return redirect('home')
-
-        # Handle Events
+        # Handle Calendar Events
         if action_type == "event":
             if not event_dt:
-                messages.error(request, "Event must include valid date/time.")
-                return redirect('home')
+                messages.error(request, "Event must include a valid date/time.")
+                return redirect('dashboard')
 
-            service = googleapiclient.discovery.build("calendar", "v3", credentials=credentials)
+            service = build(
+                "calendar",
+                "v3",
+                credentials=credentials
+            )
+
             event = {
                 'summary': title,
-                'start': {'dateTime': event_dt.isoformat(), 'timeZone': 'UTC'},
-                'end': {'dateTime': (event_dt + timedelta(hours=1)).isoformat(), 'timeZone': 'UTC'}
+                'start': {
+                    'dateTime': event_dt.isoformat(),
+                    'timeZone': 'UTC'
+                },
+                'end': {
+                    'dateTime': (
+                        event_dt + timedelta(hours=1)
+                    ).isoformat(),
+                    'timeZone': 'UTC'
+                }
             }
-            service.events().insert(calendarId='primary', body=event).execute()
 
-            # Format datetime nicely for message, e.g. April 30, 2025, 06:00 PM UTC
-            formatted_dt = event_dt.strftime('%B %d, %Y, %I:%M %p %Z')+ ' UTC'
-            messages.success(request, f"Calendar event '{title}' created successfully for {formatted_dt}!")
+            service.events().insert(
+                calendarId='primary',
+                body=event
+            ).execute()
 
-        # Handle Tasks
+            formatted_dt = event_dt.astimezone(
+                ZoneInfo("Asia/Kolkata")
+            ).strftime('%B %d, %Y, %I:%M %p')
+
+            messages.success(
+                request,
+                f"Calendar event '{title}' created successfully for {formatted_dt} IST!"
+            )
+
+        # Handle Google Tasks
         elif action_type == "task":
-            service = googleapiclient.discovery.build("tasks", "v1", credentials=credentials)
+            service = build(
+                "tasks",
+                "v1",
+                credentials=credentials
+            )
+
             task = {'title': title}
-            if event_dt:
-                # Set due date (date only)
-                task['due'] = event_dt.date().isoformat() + 'T00:00:00.000Z'
-                # Add time info in notes
-                formatted_time = event_dt.strftime('%I:%M %p %Z') or event_dt.strftime('%I:%M %p')  # fallback if %Z empty
-                task['notes'] = f"Due time: {formatted_time}"
-            service.tasks().insert(tasklist='@default', body=task).execute()
-            messages.success(request, "Task created successfully!")
 
             if event_dt:
-                formatted_due = event_dt.strftime('%B %d, %Y')
-                messages.success(request, f"Task '{title}' created successfully with due date {formatted_due}!")
+                local_dt = event_dt.astimezone(
+                    ZoneInfo("Asia/Kolkata")
+                )
+
+                task['due'] = (
+                    local_dt.date().isoformat()
+                    + 'T00:00:00.000Z'
+                )
+
+                task['notes'] = (
+                    f"Due time: {local_dt.strftime('%I:%M %p')} IST"
+                )
+
+            service.tasks().insert(
+                tasklist='@default',
+                body=task
+            ).execute()
+
+            if event_dt:
+                formatted_due = local_dt.strftime('%B %d, %Y')
+                messages.success(
+                    request,
+                    f"Task '{title}' created successfully with due date {formatted_due}!"
+                )
             else:
-                messages.success(request, f"Task '{title}' created successfully!")
+                messages.success(
+                    request,
+                    f"Task '{title}' created successfully!"
+                )
 
-        else:
-            messages.error(request, "Unsupported action type.")
-            return redirect('home')
-
-        # Refresh credentials
-        request.session['credentials'] = {
-            'token': credentials.token,
-            'refresh_token': credentials.refresh_token,
-            'token_uri': credentials.token_uri,
-            'client_id': credentials.client_id,
-            'client_secret': credentials.client_secret,
-            'scopes': credentials.scopes
-        }
+        # Save latest credentials
+        request.session['credentials'] = credentials_to_dict(credentials)
+        request.session.modified = True
 
         print("Prompt:", prompt)
         print("Gemini result:", result)
-        print("Datetime (raw):", datetime_str)
         print("Datetime (parsed):", event_dt)
         print("Title:", title)
+
         response_data = {
-            'response': f"✅ {action_type.capitalize()} '{title}' created successfully!",
+            'response': (
+                f"✅ {action_type.capitalize()} '{title}' created successfully!"
+            ),
             'prompt': prompt
         }
 
         return render(request, 'dashboard.html', response_data)
+
+    except Exception as e:
+        print("NotifyAI processing error:", repr(e))
+        messages.error(
+            request,
+            "Something went wrong while processing your request. Please try again."
+        )
+        return redirect('dashboard')
+
     
 def logout_view(request):
     # Clear session data
@@ -361,5 +441,4 @@ def logout_view(request):
 
 
 
-genai.configure(api_key=settings.GEMINI_API_KEY)
 
